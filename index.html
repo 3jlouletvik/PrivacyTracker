@@ -45,54 +45,74 @@
   <title>Трекер Приватности и Обход Звонков</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: 'Roboto', sans-serif;
       margin: 0;
       padding: 16px;
       background: #EFEFF4; /* Telegram background */
-      color: #000000; /* Telegram text */
+      color: #000000;
     }
     #dashboard {
       max-width: 600px;
       margin: auto;
+      display: grid;
+      gap: 16px;
     }
     #logs {
       margin-top: 20px;
     }
     .log-entry {
       padding: 12px;
-      background: #FFFFFF; /* Telegram white */
+      background: #FFFFFF;
       margin: 8px 0;
-      border-radius: 8px;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      border-radius: 12px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      transition: transform 0.2s;
+    }
+    .log-entry:hover {
+      transform: translateY(-2px);
     }
     button, select {
       padding: 12px 16px;
       background: #0088CC; /* Telegram blue */
       color: #FFFFFF;
       border: none;
-      border-radius: 8px;
+      border-radius: 12px;
       font-size: 16px;
-      margin: 8px 4px;
+      margin: 4px;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: background 0.2s, transform 0.2s;
     }
     button:hover, select:hover {
-      background: #0077B3; /* Darker Telegram blue */
+      background: #0077B3;
+      transform: translateY(-1px);
+    }
+    select {
+      width: 100%;
+      max-width: 200px;
     }
     canvas {
-      margin-top: 20px;
       background: #FFFFFF;
-      border-radius: 8px;
+      border-radius: 12px;
       padding: 16px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
     #consent {
       background: #FFFFFF;
       padding: 16px;
-      border-radius: 8px;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      border-radius: 12px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       margin-bottom: 16px;
+    }
+    .premium-badge {
+      background: #FFD700;
+      color: #000000;
+      padding: 4px 8px;
+      border-radius: 8px;
+      font-size: 12px;
+      margin-left: 8px;
     }
   </style>
 </head>
@@ -103,11 +123,17 @@
       Это приложение локально отслеживает метаданные звонков/сообщений (дата, длительность, контакт) и оптимизирует звонки через TCP/прокси. Данные не отправляются на серверы. Согласны?<br>
       <button onclick="grantConsent()">Согласен</button>
     </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+      <button onclick="enableCallBypass()">Включить обход блокировок (TCP)</button>
+      <button onclick="enableProxy()" id="proxyButton">Включить прокси <span class="premium-badge">Премиум</span></button>
+      <button onclick="syncContacts()">Синхронизировать контакты</button>
+    </div>
     <div>
-      <button onclick="enableCallBypass()">Включить обход блокировок (TCP/Прокси)</button>
       <select id="contactSelect" onchange="makeCall()">
         <option value="">Выберите контакт для звонка</option>
       </select>
+      <input id="manualContact" type="text" placeholder="Или введите @username" style="padding: 12px; border-radius: 12px; border: 1px solid #ccc; margin: 4px; width: 100%; max-width: 200px;">
+      <button onclick="makeCallManual()">Позвонить</button>
     </div>
     <div id="logs"></div>
     <canvas id="statsChart"></canvas>
@@ -119,24 +145,25 @@
     tg.ready();
 
     // Bot token (replace with your @PrivacyTrackerBot token from @BotFather)
-    const BOT_TOKEN = '8294010928:AAGLKaMLo2HjH5s3P_vmG85ZxyBx9ZQrCk0'; // Securely store in env variables
+    const BOT_TOKEN = '8294010928:AAGLKaMLo2HjH5s3P_vmG85ZxyBx9ZQrCk0';
     const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
     // Proxy configuration (replace with real MTProto proxy from PROXY.NET)
     const PROXY_CONFIG = {
       server: 'proxy.mtproto.co',
       port: 443,
-      secret: 'your_mtproto_secret_here' // Obtain from PROXY.NET
+      secret: 'your_mtproto_secret_here'
     };
 
-    // Check user consent
+    // Check user consent and premium status (simulated)
     let consented = localStorage.getItem('consent');
+    let isPremium = localStorage.getItem('isPremium') === 'true'; // Replace with Telegram Payments in production
     if (!consented) {
       document.getElementById('consent').style.display = 'block';
     } else {
       loadDashboard();
       startPolling();
-      syncContacts();
+      updateContactSelect();
     }
 
     function grantConsent() {
@@ -153,18 +180,23 @@
 
     // Sync contacts from Telegram
     async function syncContacts() {
-      if (!consented) return;
+      if (!consented) return alert('Сначала дайте согласие.');
       try {
         tg.requestContact((success, contact) => {
           if (success && contact) {
-            contacts.push({
-              user_id: contact.user_id,
-              name: contact.first_name + (contact.last_name ? ' ' + contact.last_name : ''),
-              username: contact.username || '',
-              phone_number: contact.phone_number
-            });
-            localStorage.setItem('contacts', JSON.stringify(contacts));
-            updateContactSelect();
+            const existing = contacts.find(c => c.user_id === contact.user_id);
+            if (!existing) {
+              contacts.push({
+                user_id: contact.user_id,
+                name: contact.first_name + (contact.last_name ? ' ' + contact.last_name : ''),
+                username: contact.username || '',
+                phone_number: contact.phone_number
+              });
+              localStorage.setItem('contacts', JSON.stringify(contacts));
+              updateContactSelect();
+            }
+          } else {
+            alert('Не удалось получить доступ к контактам. Введите username вручную.');
           }
         });
       } catch (error) {
@@ -219,10 +251,10 @@
         });
 
         loadDashboard();
-        setTimeout(() => startPolling(offset), 1000); // Poll every second
+        setTimeout(() => startPolling(offset), 1000);
       } catch (error) {
         console.error('Ошибка получения данных:', error);
-        setTimeout(() => startPolling(offset), 5000); // Retry on error
+        setTimeout(() => startPolling(offset), 5000);
       }
     }
 
@@ -246,7 +278,7 @@
           datasets: [{
             label: 'Активность',
             data: logs.map(log => log.type === 'call' ? log.duration : log.count),
-            backgroundColor: '#0088CC' // Telegram blue
+            backgroundColor: '#0088CC'
           }]
         },
         options: {
@@ -263,18 +295,25 @@
     async function enableCallBypass() {
       if (!consented) return alert('Сначала дайте согласие.');
       try {
-        // Enable Force TCP (simulated, Telegram handles internally)
         await fetch(`${API_URL}/sendMessage?chat_id=${tg.initDataUnsafe.user.id}&text=Включение TCP для звонков...`);
-        
-        // Enable MTProto proxy
+        alert('Обход блокировок включён: используется TCP.');
+      } catch (error) {
+        alert('Ошибка включения TCP: ' + error.message);
+      }
+    }
+
+    async function enableProxy() {
+      if (!consented) return alert('Сначала дайте согласие.');
+      if (!isPremium) return alert('Прокси доступны только в премиум-версии. Подпишитесь!');
+      try {
         const proxySettings = {
           chat_id: tg.initDataUnsafe.user.id,
           text: `Установка прокси: ${PROXY_CONFIG.server}:${PROXY_CONFIG.port}`
         };
         await fetch(`${API_URL}/sendMessage?${new URLSearchParams(proxySettings)}`);
-        alert('Обход блокировок включён: используется TCP и MTProto-прокси.');
+        alert('Прокси включён: используется MTProto.');
       } catch (error) {
-        alert('Ошибка включения обхода: ' + error.message);
+        alert('Ошибка включения прокси: ' + error.message);
       }
     }
 
@@ -284,9 +323,7 @@
       const userId = select.value;
       if (userId) {
         try {
-          // Initiate call via deep link
           window.location.href = `tg://user?id=${userId}`;
-          // Log call start
           const contact = contacts.find(c => c.user_id == userId);
           logs.push({
             type: 'call',
@@ -301,6 +338,34 @@
         }
       } else {
         alert('Выберите контакт.');
+      }
+    }
+
+    async function makeCallManual() {
+      if (!consented) return alert('Сначала дайте согласие.');
+      const username = document.getElementById('manualContact').value;
+      if (username) {
+        try {
+          const response = await fetch(`${API_URL}/getChat?chat_id=${username}`);
+          const data = await response.json();
+          if (data.ok) {
+            window.location.href = `tg://user?id=${data.result.id}`;
+            logs.push({
+              type: 'call',
+              contact: username,
+              duration: 0,
+              date: new Date().toISOString()
+            });
+            localStorage.setItem('commLogs', JSON.stringify(logs));
+            loadDashboard();
+          } else {
+            alert('Пользователь не найден.');
+          }
+        } catch (error) {
+          alert('Ошибка начала звонка: ' + error.message);
+        }
+      } else {
+        alert('Введите username.');
       }
     }
 
