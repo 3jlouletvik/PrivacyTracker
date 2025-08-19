@@ -1,0 +1,173 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Tracker & Call Bypass</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f0f0f0; }
+    #dashboard { max-width: 600px; margin: auto; }
+    #logs { margin-top: 20px; }
+    .log-entry { padding: 10px; background: white; margin: 5px 0; border-radius: 5px; }
+    button { padding: 10px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+    canvas { margin-top: 20px; }
+    #consent { background: #fff; padding: 15px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <div id="dashboard">
+    <h2>Privacy Tracker & Call Bypass</h2>
+    <p id="consent" style="display: none;">
+      This app tracks call/message metadata locally (date, duration, contact) and optimizes calls via TCP/proxy. No data is sent to servers. Consent to proceed?<br>
+      <button onclick="grantConsent()">Consent</button>
+    </p>
+    <button onclick="enableCallBypass()">Enable Call Bypass (TCP/Proxy)</button>
+    <button onclick="makeCall()">Make a Call</button>
+    <div id="logs"></div>
+    <canvas id="statsChart"></canvas>
+    <button onclick="exportCSV()">Export to CSV</button>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+
+    // Check user consent
+    let consented = localStorage.getItem('consent');
+    if (!consented) {
+      document.getElementById('consent').style.display = 'block';
+    } else {
+      loadDashboard();
+    }
+
+    function grantConsent() {
+      localStorage.setItem('consent', 'true');
+      document.getElementById('consent').style.display = 'none';
+      loadDashboard();
+    }
+
+    // Simulated metadata (replace with Bot API getUpdates)
+    let logs = JSON.parse(localStorage.getItem('commLogs')) || [];
+
+    async function loadDashboard() {
+      if (!consented) return;
+
+      // Simulate fetching updates (replace with real Bot API)
+      const sampleData = [
+        { type: 'call', contact: 'User1', duration: 120, date: '2025-08-19T10:00:00Z' },
+        { type: 'message', contact: 'User2', count: 5, date: '2025-08-19T11:00:00Z' }
+      ];
+      logs.push(...sampleData);
+      localStorage.setItem('commLogs', JSON.stringify(logs));
+
+      // Display logs
+      const logsDiv = document.getElementById('logs');
+      logsDiv.innerHTML = logs.map(log => 
+        `<div class="log-entry">${log.type === 'call' ? 
+          `Call with ${log.contact} (${log.duration}s) at ${new Date(log.date).toLocaleString()}` : 
+          `Messages (${log.count}) with ${log.contact} at ${new Date(log.date).toLocaleString()}`}
+        </div>`).join('');
+
+      // Chart
+      const ctx = document.getElementById('statsChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: logs.map(log => new Date(log.date).toLocaleDateString()),
+          datasets: [{
+            label: 'Activity Count',
+            data: logs.map(log => log.type === 'call' ? log.duration : log.count),
+            backgroundColor: '#007bff'
+          }]
+        },
+        options: { scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    async function enableCallBypass() {
+      if (!consented) return alert('Please consent first.');
+      // Simulate enabling Force TCP or proxy (replace with actual API call)
+      try {
+        // In production: fetch(`https://api.telegram.org/bot<token>/sendMessage?chat_id=${tg.initDataUnsafe.user.id}&text=Enable Force TCP`);
+        // Or set MTProto proxy via Telegram API (e.g., proxy from PROXY.NET)
+        alert('Call bypass enabled: Using TCP or MTProto proxy for calls.');
+      } catch (error) {
+        alert('Error enabling bypass: ' + error.message);
+      }
+    }
+
+    async function makeCall() {
+      if (!consented) return alert('Please consent first.');
+      const contact = prompt('Enter Telegram username to call (e.g., @User)');
+      if (contact) {
+        try {
+          // Simulate call initiation (replace with Telegram deep link or API)
+          // Example: window.location.href = `tg://user?id=<user_id>`;
+          alert(`Initiating call to ${contact} with bypass settings...`);
+          // Log call (simulated)
+          logs.push({ type: 'call', contact: contact, duration: 0, date: new Date().toISOString() });
+          localStorage.setItem('commLogs', JSON.stringify(logs));
+          loadDashboard();
+        } catch (error) {
+          alert('Error initiating call: ' + error.message);
+        }
+      }
+    }
+
+    function exportCSV() {
+      if (!consented) return alert('Please consent first.');
+      const csv = ['Type,Contact,Value,Date', ...logs.map(log => 
+        `${log.type},${log.contact},${log.type === 'call' ? log.duration : log.count},${log.date}`
+      )].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'comm_logs.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
