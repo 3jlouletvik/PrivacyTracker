@@ -38,11 +38,11 @@
         return gk_fileData[filename] || "";
         }
         </script><!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Tracker & Call Bypass</title>
+  <title>Трекер Приватности и Обход Звонков</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
@@ -67,18 +67,18 @@
       border-radius: 8px;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
-    button {
+    button, select {
       padding: 12px 16px;
       background: #0088CC; /* Telegram blue */
       color: #FFFFFF;
       border: none;
       border-radius: 8px;
-      cursor: pointer;
       font-size: 16px;
       margin: 8px 4px;
+      cursor: pointer;
       transition: background 0.2s;
     }
-    button:hover {
+    button:hover, select:hover {
       background: #0077B3; /* Darker Telegram blue */
     }
     canvas {
@@ -98,18 +98,20 @@
 </head>
 <body>
   <div id="dashboard">
-    <h2 style="color: #0088CC;">Privacy Tracker & Call Bypass</h2>
+    <h2 style="color: #0088CC;">Трекер Приватности и Обход Звонков</h2>
     <div id="consent" style="display: none;">
-      This app tracks call/message metadata locally (date, duration, contact) and optimizes calls via TCP/proxy. No data is sent to servers. Consent to proceed?<br>
-      <button onclick="grantConsent()">Consent</button>
+      Это приложение локально отслеживает метаданные звонков/сообщений (дата, длительность, контакт) и оптимизирует звонки через TCP/прокси. Данные не отправляются на серверы. Согласны?<br>
+      <button onclick="grantConsent()">Согласен</button>
     </div>
     <div>
-      <button onclick="enableCallBypass()">Enable Call Bypass (TCP/Proxy)</button>
-      <button onclick="makeCall()">Make a Call</button>
+      <button onclick="enableCallBypass()">Включить обход блокировок (TCP/Прокси)</button>
+      <select id="contactSelect" onchange="makeCall()">
+        <option value="">Выберите контакт для звонка</option>
+      </select>
     </div>
     <div id="logs"></div>
     <canvas id="statsChart"></canvas>
-    <button onclick="exportCSV()">Export to CSV</button>
+    <button onclick="exportCSV()">Экспорт в CSV</button>
   </div>
 
   <script>
@@ -117,14 +119,14 @@
     tg.ready();
 
     // Bot token (replace with your @PrivacyTrackerBot token from @BotFather)
-    const BOT_TOKEN = '8294010928:AAGLKaMLo2HjH5s3P_vmG85ZxyBx9ZQrCk0'; // Securely st ore this in env variables
+    const BOT_TOKEN = '8294010928:AAGLKaMLo2HjH5s3P_vmG85ZxyBx9ZQrCk0'; // Securely store in env variables
     const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
-    
+
     // Proxy configuration (replace with real MTProto proxy from PROXY.NET)
     const PROXY_CONFIG = {
       server: 'proxy.mtproto.co',
       port: 443,
-      secret: 'your_mtproto_secret_here' // Obtain from PROXY.NET or similar
+      secret: 'your_mtproto_secret_here' // Obtain from PROXY.NET
     };
 
     // Check user consent
@@ -134,6 +136,7 @@
     } else {
       loadDashboard();
       startPolling();
+      syncContacts();
     }
 
     function grantConsent() {
@@ -141,10 +144,45 @@
       document.getElementById('consent').style.display = 'none';
       loadDashboard();
       startPolling();
+      syncContacts();
     }
 
-    // Store logs locally
+    // Store logs and contacts locally
     let logs = JSON.parse(localStorage.getItem('commLogs')) || [];
+    let contacts = JSON.parse(localStorage.getItem('contacts')) || [];
+
+    // Sync contacts from Telegram
+    async function syncContacts() {
+      if (!consented) return;
+      try {
+        tg.requestContact((success, contact) => {
+          if (success && contact) {
+            contacts.push({
+              user_id: contact.user_id,
+              name: contact.first_name + (contact.last_name ? ' ' + contact.last_name : ''),
+              username: contact.username || '',
+              phone_number: contact.phone_number
+            });
+            localStorage.setItem('contacts', JSON.stringify(contacts));
+            updateContactSelect();
+          }
+        });
+      } catch (error) {
+        alert('Ошибка синхронизации контактов: ' + error.message);
+      }
+    }
+
+    // Update contact dropdown
+    function updateContactSelect() {
+      const select = document.getElementById('contactSelect');
+      select.innerHTML = '<option value="">Выберите контакт для звонка</option>';
+      contacts.forEach(contact => {
+        const option = document.createElement('option');
+        option.value = contact.user_id;
+        option.text = contact.username ? `@${contact.username}` : contact.name;
+        select.appendChild(option);
+      });
+    }
 
     // Poll Telegram API for updates
     async function startPolling(offset = 0) {
@@ -156,11 +194,12 @@
 
         data.result.forEach(update => {
           if (update.message) {
+            const contact = update.message.from.username || update.message.from.first_name;
             if (update.message.video_chat_started) {
               logs.push({
                 type: 'call',
-                contact: update.message.from.username || update.message.from.first_name,
-                duration: 0, // Duration updated on video_chat_ended
+                contact: contact,
+                duration: 0,
                 date: new Date(update.message.date * 1000).toISOString()
               });
             } else if (update.message.video_chat_ended) {
@@ -169,7 +208,7 @@
             } else {
               logs.push({
                 type: 'message',
-                contact: update.message.from.username || update.message.from.first_name,
+                contact: contact,
                 count: 1,
                 date: new Date(update.message.date * 1000).toISOString()
               });
@@ -182,7 +221,7 @@
         loadDashboard();
         setTimeout(() => startPolling(offset), 1000); // Poll every second
       } catch (error) {
-        console.error('Polling error:', error);
+        console.error('Ошибка получения данных:', error);
         setTimeout(() => startPolling(offset), 5000); // Retry on error
       }
     }
@@ -194,8 +233,8 @@
       const logsDiv = document.getElementById('logs');
       logsDiv.innerHTML = logs.map(log => 
         `<div class="log-entry">${log.type === 'call' ? 
-          `Call with ${log.contact} (${log.duration}s) at ${new Date(log.date).toLocaleString()}` : 
-          `Messages (${log.count}) with ${log.contact} at ${new Date(log.date).toLocaleString()}`}
+          `Звонок с ${log.contact} (${log.duration} сек) в ${new Date(log.date).toLocaleString('ru')}` : 
+          `Сообщения (${log.count}) с ${log.contact} в ${new Date(log.date).toLocaleString('ru')}`}
         </div>`).join('');
 
       // Chart
@@ -203,89 +242,78 @@
       new Chart(ctx, {
         type: 'bar',
         data: {
-          labels: logs.map(log => new Date(log.date).toLocaleDateString()),
+          labels: logs.map(log => new Date(log.date).toLocaleDateString('ru')),
           datasets: [{
-            label: 'Activity Count',
+            label: 'Активность',
             data: logs.map(log => log.type === 'call' ? log.duration : log.count),
             backgroundColor: '#0088CC' // Telegram blue
           }]
         },
         options: {
           scales: {
-            y: { beginAtZero: true }
+            y: { beginAtZero: true, title: { display: true, text: 'Значение' } }
+          },
+          plugins: {
+            legend: { labels: { color: '#000000' } }
           }
         }
       });
     }
 
     async function enableCallBypass() {
-      if (!consented) return alert('Please consent first.');
+      if (!consented) return alert('Сначала дайте согласие.');
       try {
-        // Enable Force TCP (simulated, as Telegram handles internally)
-        await fetch(`${API_URL}/sendMessage?chat_id=${tg.initDataUnsafe.user.id}&text=Enabling Force TCP for calls...`);
+        // Enable Force TCP (simulated, Telegram handles internally)
+        await fetch(`${API_URL}/sendMessage?chat_id=${tg.initDataUnsafe.user.id}&text=Включение TCP для звонков...`);
         
         // Enable MTProto proxy
         const proxySettings = {
           chat_id: tg.initDataUnsafe.user.id,
-          text: `Setting proxy: ${PROXY_CONFIG.server}:${PROXY_CONFIG.port}`
+          text: `Установка прокси: ${PROXY_CONFIG.server}:${PROXY_CONFIG.port}`
         };
         await fetch(`${API_URL}/sendMessage?${new URLSearchParams(proxySettings)}`);
-        alert('Call bypass enabled: Using TCP and MTProto proxy.');
+        alert('Обход блокировок включён: используется TCP и MTProto-прокси.');
       } catch (error) {
-        alert('Error enabling bypass: ' + error.message);
+        alert('Ошибка включения обхода: ' + error.message);
       }
     }
 
     async function makeCall() {
-      if (!consented) return alert('Please consent first.');
-      const contact = prompt('Enter Telegram username to call (e.g., @User)');
-      if (contact) {
+      if (!consented) return alert('Сначала дайте согласие.');
+      const select = document.getElementById('contactSelect');
+      const userId = select.value;
+      if (userId) {
         try {
           // Initiate call via deep link
-          const userId = await resolveUsername(contact);
-          if (userId) {
-            window.location.href = `tg://user?id=${userId}`;
-            // Log call start
-            logs.push({
-              type: 'call',
-              contact: contact,
-              duration: 0,
-              date: new Date().toISOString()
-            });
-            localStorage.setItem('commLogs', JSON.stringify(logs));
-            loadDashboard();
-          } else {
-            alert('User not found.');
-          }
+          window.location.href = `tg://user?id=${userId}`;
+          // Log call start
+          const contact = contacts.find(c => c.user_id == userId);
+          logs.push({
+            type: 'call',
+            contact: contact.username ? `@${contact.username}` : contact.name,
+            duration: 0,
+            date: new Date().toISOString()
+          });
+          localStorage.setItem('commLogs', JSON.stringify(logs));
+          loadDashboard();
         } catch (error) {
-          alert('Error initiating call: ' + error.message);
+          alert('Ошибка начала звонка: ' + error.message);
         }
-      }
-    }
-
-    // Resolve username to user ID
-    async function resolveUsername(username) {
-      try {
-        const response = await fetch(`${API_URL}/getChat?chat_id=${username}`);
-        const data = await response.json();
-        if (data.ok) return data.result.id;
-        return null;
-      } catch (error) {
-        console.error('Error resolving username:', error);
-        return null;
+      } else {
+        alert('Выберите контакт.');
       }
     }
 
     function exportCSV() {
-      if (!consented) return alert('Please consent first.');
-      const csv = ['Type,Contact,Value,Date', ...logs.map(log => 
-        `${log.type},${log.contact},${log.type === 'call' ? log.duration : log.count},${log.date}`
+      if (!consented) return alert('Сначала дайте согласие.');
+      const csv = ['Тип,Контакт,Значение,Дата', ...logs.map(log => 
+        `${log.type === 'call' ? 'Звонок' : 'Сообщение'},${log.contact},${log.type === 'call' ? log.duration : log.count},${log.date}`
       )].join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'comm_logs.csv';
+      a.download = 'логи_звонков.csv';
       a.click();
       URL.revokeObjectURL(url);
     }
